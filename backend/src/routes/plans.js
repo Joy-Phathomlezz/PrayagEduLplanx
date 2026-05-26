@@ -1,59 +1,62 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const pool = require('../db');
-const { verifyJWT } = require('../middleware/auth');
+const { verifyAPIKey } = require('../middleware/auth');
 
 const router = express.Router();
 
-// All routes require school JWT
-router.use(verifyJWT);
-
-// POST /api/plans — create a new plan instance (queued as pending)
-router.post('/', async (req, res) => {
+/**
+ * External Integration: POST /api/plans
+ * Create a new plan instance. Authenticates via X-API-Key header.
+ */
+router.post('/', verifyAPIKey, async (req, res) => {
   try {
     const {
-      textbookUrl,
-      syllabusUrl,
-      routineUrl,
-      holidayCalendarUrl,
-      sessionStart,
-      sessionEnd,
+      name,
+      textbook_url,
+      syllabus_url,
+      routine_url,
+      holiday_url,
+      session_start,
+      session_end,
+      response_url
     } = req.body;
 
-    if (!textbookUrl || !syllabusUrl || !routineUrl || !holidayCalendarUrl || !sessionStart || !sessionEnd) {
-      return res.status(400).json({ error: 'All fields are required: textbookUrl, syllabusUrl, routineUrl, holidayCalendarUrl, sessionStart, sessionEnd' });
+    // Validate required fields (using snake_case as per request requirement "Accept: api_key, textbook_url...")
+    if (!textbook_url || !syllabus_url || !routine_url || !holiday_url || !session_start || !session_end) {
+      return res.status(400).json({ error: 'Missing required fields: textbook_url, syllabus_url, routine_url, holiday_url, session_start, session_end' });
     }
 
     const id = uuidv4();
+    const isCallback = response_url ? 1 : 0;
 
     await pool.execute(
       `INSERT INTO plan_instances
-        (id, school_id, textbook_url, syllabus_url, routine_url, holiday_calendar_url, session_start, session_end, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
-      [id, req.school.id, textbookUrl, syllabusUrl, routineUrl, holidayCalendarUrl, sessionStart, sessionEnd]
+        (id, school_id, name, textbook_url, syllabus_url, routine_url, holiday_calendar_url, session_start, session_end, status, is_callback, response_url)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
+      [id, req.school.id, name || null, textbook_url, syllabus_url, routine_url, holiday_url, session_start, session_end, isCallback, response_url || null]
     );
 
     res.status(201).json({
       id,
       status: 'pending',
-      message: 'Plan instance created and queued for processing',
+      message: 'Plan instance created successfully',
+      callback_enabled: !!isCallback
     });
   } catch (err) {
-    console.error('Create plan error:', err);
+    console.error('External generate-plan error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// GET /api/plans — list all plan instances for the logged-in school
+// GET /api/plans — list all plan instances (admin view)
 router.get('/', async (req, res) => {
   try {
     const [rows] = await pool.execute(
-      `SELECT id, textbook_url, syllabus_url, routine_url, holiday_calendar_url,
-              session_start, session_end, status, error_message, created_at, updated_at
+      `SELECT id, name, textbook_url, syllabus_url, routine_url, holiday_calendar_url,
+              session_start, session_end, status, error_message, created_at, updated_at, is_callback
        FROM plan_instances
-       WHERE school_id = ?
-       ORDER BY created_at DESC`,
-      [req.school.id]
+       ORDER BY created_at DESC`
     );
     res.json({ plans: rows });
   } catch (err) {
@@ -66,8 +69,8 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   try {
     const [rows] = await pool.execute(
-      `SELECT * FROM plan_instances WHERE id = ? AND school_id = ?`,
-      [req.params.id, req.school.id]
+      `SELECT * FROM plan_instances WHERE id = ?`,
+      [req.params.id]
     );
 
     if (rows.length === 0) {
@@ -93,12 +96,12 @@ router.get('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   try {
     const [result] = await pool.execute(
-      `DELETE FROM plan_instances WHERE id = ? AND school_id = ?`,
-      [req.params.id, req.school.id]
+      `DELETE FROM plan_instances WHERE id = ?`,
+      [req.params.id]
     );
 
     if (result.affectedRows === 0) {
-      return res.status(404).json({ error: 'Plan instance not found or unauthorized' });
+      return res.status(404).json({ error: 'Plan instance not found' });
     }
 
     res.json({ message: 'Plan instance deleted successfully' });

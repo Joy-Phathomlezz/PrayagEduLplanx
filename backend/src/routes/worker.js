@@ -8,11 +8,11 @@ const router = express.Router();
 router.use(verifyWorkerKey);
 
 /**
- * GET /api/worker/next-task
+ * GET /api/tasks/next
  * Atomically fetch the oldest pending task and mark it as processing.
  * Uses SELECT ... FOR UPDATE to prevent race conditions between multiple workers.
  */
-router.get('/next-task', async (req, res) => {
+router.get('/next', async (req, res) => {
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
@@ -54,17 +54,64 @@ router.get('/next-task', async (req, res) => {
 });
 
 /**
- * POST /api/worker/complete-task
- * Worker submits the generated JSON result.
+ * Callback Dispatcher (The "Secret Sauce")
+ * Asynchronously sends the result to the response_url.
  */
-router.post('/complete-task', async (req, res) => {
+async function dispatchCallback(taskId, resultJson, responseUrl) {
   try {
-    const { taskId, resultJson } = req.body;
-    if (!taskId || resultJson === undefined) {
+    console.log(` Dispatching callback for task ${taskId} to ${responseUrl}`);
+    
+    const response = await fetch(responseUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        LessonPlanJSON: resultJson
+      })
+    });
+
+    if (response.ok) {
+      await pool.execute(
+        "UPDATE plan_instances SET status = 'callback_sent' WHERE id = ?",
+        [taskId]
+      );
+      console.log(`Callback sent successfully for task ${taskId}`);
+    } else {
+      throw new Error(`Response status ${response.status}`);
+    }
+  } catch (err) {
+    console.error(`Callback failed for task ${taskId}:`, err.message);
+    await pool.execute(
+      "UPDATE plan_instances SET status = 'callback_failed' WHERE id = ?",
+      [taskId]
+    );
+  }
+}
+
+/**
+ * POST /api/tasks/:id/complete
+ * Mark a task as completed and submit the generated JSON result.
+ */
+router.post('/:taskId/complete', async (req, res) => {
+  try {
+    const { taskId } = req.params;
+    const { LessonPlanJSON } = req.body;
+    if (!taskId || LessonPlanJSON === undefined) {
       return res.status(400).json({ error: 'taskId and resultJson are required' });
     }
 
-    const jsonStr = typeof resultJson === 'string' ? resultJson : JSON.stringify(resultJson);
+    const jsonStr = typeof LessonPlanJSON === 'string' ? LessonPlanJSON : JSON.stringify(LessonPlanJSON);
+
+    // Get task info first to check for callback
+    const [rows] = await pool.execute(
+      "SELECT is_callback, response_url FROM plan_instances WHERE id = ?",
+      [taskId]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Task not found' });
+    }
+
+    const task = rows[0];
 
     const [result] = await pool.execute(
       `UPDATE plan_instances SET status = 'completed', result_json = ? WHERE id = ? AND status = 'processing'`,
@@ -75,6 +122,12 @@ router.post('/complete-task', async (req, res) => {
       return res.status(404).json({ error: 'Task not found or not in processing state' });
     }
 
+    // Trigger callback if enabled
+    if (task.is_callback && task.response_url) {
+      // Fire and forget (don't await to keep endpoint atomic)
+      dispatchCallback(taskId, LessonPlanJSON, task.response_url);
+    }
+
     res.json({ message: 'Task completed successfully' });
   } catch (err) {
     console.error('complete-task error:', err);
@@ -83,12 +136,13 @@ router.post('/complete-task', async (req, res) => {
 });
 
 /**
- * POST /api/worker/fail-task
- * Worker reports a task failure.
+ * POST /api/tasks/:id/fail
+ * Mark a task as failed with an error message.
  */
-router.post('/fail-task', async (req, res) => {
+router.post('/:taskId/fail', async (req, res) => {
   try {
-    const { taskId, errorMessage } = req.body;
+    const { taskId } = req.params;
+    const { errorMessage } = req.body;
     if (!taskId) {
       return res.status(400).json({ error: 'taskId is required' });
     }

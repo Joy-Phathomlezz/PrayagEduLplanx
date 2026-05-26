@@ -1,27 +1,5 @@
-const jwt = require('jsonwebtoken');
+const pool = require('../db');
 
-/**
- * Verify JWT Bearer token — protects school-facing routes.
- */
-function verifyJWT(req, res, next) {
-  const header = req.headers.authorization;
-  if (!header || !header.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Missing or invalid Authorization header' });
-  }
-
-  const token = header.split(' ')[1];
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.school = { id: decoded.id, email: decoded.email, name: decoded.name };
-    next();
-  } catch (err) {
-    return res.status(401).json({ error: 'Invalid or expired token' });
-  }
-}
-
-/**
- * Verify X-Worker-Key header — protects worker-facing routes.
- */
 function verifyWorkerKey(req, res, next) {
   const key = req.headers['x-worker-key'];
   if (!key || key !== process.env.WORKER_SECRET_KEY) {
@@ -30,4 +8,31 @@ function verifyWorkerKey(req, res, next) {
   next();
 }
 
-module.exports = { verifyJWT, verifyWorkerKey };
+/**
+ * Verify X-API-Key header — protects external school integration routes.
+ */
+async function verifyAPIKey(req, res, next) {
+  const key = req.headers['x-api-key'];
+  if (!key) {
+    return res.status(401).json({ error: 'Missing X-API-Key header' });
+  }
+
+  try {
+    const [rows] = await pool.execute(
+      'SELECT id, name, domain, code FROM schools WHERE api_key = ?',
+      [key]
+    );
+
+    if (rows.length === 0) {
+      return res.status(401).json({ error: 'Invalid API key' });
+    }
+
+    req.school = rows[0];
+    next();
+  } catch (err) {
+    console.error('API key verification error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+module.exports = { verifyWorkerKey, verifyAPIKey };

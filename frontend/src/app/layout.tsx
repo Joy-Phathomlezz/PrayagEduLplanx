@@ -13,9 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Prayag EduPlan — School Lesson Planning Platform",
+  title: "PrayagEdu Lesson Plan — School Lesson Plan",
   description:
-    "Multi-tenant school lesson planning platform. Submit academic resources, generate structured lesson plans with AI.",
+    "Multi-tenant school lesson planning service. Submit academic resources, generate structured lesson plans with AI.",
 };
 
 export default function RootLayout({
