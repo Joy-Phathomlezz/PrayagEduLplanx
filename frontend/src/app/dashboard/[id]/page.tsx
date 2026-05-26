@@ -254,7 +254,7 @@ export default function PlanDetailPage() {
 
   async function loadPlan() {
     try {
-      const data = await apiFetch<{ plan: PlanDetail }>(`/api/plans/${planId}`);
+      const data = await apiFetch<{ plan: PlanDetail }>(`/plans/${planId}`);
       setPlan(data.plan);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to load plan");

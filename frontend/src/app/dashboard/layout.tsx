@@ -9,18 +9,17 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   const [schoolName, setSchoolName] = useState("");
 
   useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (!token) {
+    const role = localStorage.getItem("userRole");
+    if (role !== "admin") {
       router.replace("/login");
       return;
     }
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setSchoolName(localStorage.getItem("schoolName") || "School Admin");
+    setSchoolName("Admin");
   }, [router]);
 
   function handleLogout() {
-    localStorage.removeItem("token");
-    localStorage.removeItem("schoolName");
+    localStorage.removeItem("userRole");
     router.replace("/login");
   }
 
@@ -46,7 +45,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
               </svg>
             </div>
             <span className="font-semibold text-[var(--text-primary)]">
-              Prayag EduPlan
+              PrayagEdu Lesson Plan
             </span>
           </Link>
 

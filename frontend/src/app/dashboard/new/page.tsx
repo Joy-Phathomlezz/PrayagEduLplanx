@@ -11,12 +11,15 @@ export default function NewPlanPage() {
   const [error, setError] = useState("");
 
   const [form, setForm] = useState({
+    apiKey: "",
+    name: "",
     textbookUrl: "",
     syllabusUrl: "",
     routineUrl: "",
     holidayCalendarUrl: "",
     sessionStart: "",
     sessionEnd: "",
+    responseUrl: "",
   });
 
   function update(key: string, value: string) {
@@ -29,9 +32,23 @@ export default function NewPlanPage() {
     setLoading(true);
 
     try {
-      await apiFetch("/api/plans", {
+      const { apiKey, name, textbookUrl, syllabusUrl, routineUrl, holidayCalendarUrl, sessionStart, sessionEnd, responseUrl } = form;
+      
+      await apiFetch("/plans", {
         method: "POST",
-        body: JSON.stringify(form),
+        headers: {
+          "X-API-Key": apiKey,
+        },
+        body: JSON.stringify({
+          name: name || undefined,
+          textbook_url: textbookUrl,
+          syllabus_url: syllabusUrl,
+          routine_url: routineUrl,
+          holiday_url: holidayCalendarUrl,
+          session_start: sessionStart,
+          session_end: sessionEnd,
+          response_url: responseUrl || undefined,
+        }),
       });
       router.push("/dashboard");
     } catch (err: unknown) {
@@ -43,40 +60,67 @@ export default function NewPlanPage() {
 
   const fields = [
     {
+      key: "apiKey",
+      label: "School API Key",
+      placeholder: "Paste school integration API key here",
+      type: "password",
+      required: true,
+    },
+    {
+      key: "name",
+      label: "Plan Name",
+      placeholder: "e.g. Maths-5-ARPS",
+      type: "text",
+      required: false,
+    },
+    {
       key: "textbookUrl",
       label: "Textbook URL",
       placeholder: "https://example.com/textbook.pdf",
       type: "url",
+      required: true,
     },
     {
       key: "syllabusUrl",
       label: "Syllabus URL",
       placeholder: "https://example.com/syllabus.pdf",
       type: "url",
+      required: true,
     },
     {
       key: "routineUrl",
       label: "Routine URL",
       placeholder: "https://example.com/routine.pdf",
       type: "url",
+      required: true,
     },
     {
       key: "holidayCalendarUrl",
       label: "Holiday Calendar URL",
       placeholder: "https://example.com/holidays.pdf",
       type: "url",
+      required: true,
     },
     {
       key: "sessionStart",
       label: "Academic Session Start",
       placeholder: "",
       type: "date",
+      required: true,
     },
     {
       key: "sessionEnd",
       label: "Academic Session End",
       placeholder: "",
       type: "date",
+      required: true,
+    },
+    {
+      key: "responseUrl",
+      label: "Webhook Callback URL",
+      placeholder: "https://your-erp.com/api/callback",
+      type: "url",
+      required: false,
     },
   ];
 
@@ -107,12 +151,12 @@ export default function NewPlanPage() {
                 htmlFor={field.key}
                 className="block text-xs font-medium text-[var(--text-secondary)] mb-2 uppercase tracking-wider"
               >
-                {field.label}
+                {field.label} {field.required && <span className="text-[var(--error)]">*</span>}
               </label>
               <input
                 id={field.key}
                 type={field.type}
-                required
+                required={field.required}
                 value={form[field.key as keyof typeof form]}
                 onChange={(e) => update(field.key, e.target.value)}
                 placeholder={field.placeholder}
